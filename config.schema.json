@@ -1,0 +1,42 @@
+{
+ "pluginType": "platform",
+ "pluginAlias": "Russound",
+ "schema": {
+  "sources": {
+   "required": true,
+   "default": "6",
+   "title": "Sources",
+   "type": "string"
+  },
+  "model": {
+   "required": true,
+   "default": "MCA 88X",
+   "title": "Model",
+   "type": "string"
+  },
+  "ip_address": {
+   "required": true,
+   "default": "192.168.1.1",
+   "title": "IP-Address or hostname",
+   "type": "string"
+  },
+  "zones": {
+   "required": true,
+   "default": "6",
+   "title": "Zones",
+   "type": "string"
+  },
+  "ip_port": {
+   "required": false,
+   "default": "9621",
+   "title": "Default port (optional)",
+   "type": "string"
+  },
+  "name": {
+   "required": true,
+   "default": "Russound",
+   "title": "Name",
+   "type": "string"
+  }
+ }
+}
