@@ -1,75 +1,29 @@
 {
-  "name": "homebridge-russound",
+  "name": "russound-rio",
   "version": "0.0.1",
-  "description": "Homebridge plugin for Russound RIO",
+  "description": "Russound RIO",
   "main": "index.js",
+  "license": "ISC",
   "scripts": {
-    "pretest": "eslint --ignore-path .gitignore package.json config.schema.json",
-    "test": "xo"
   },
+  "keywords": [
+    "Russound",
+    "RIO"
+  ],
+  "author": "Michael Pettorosso",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MichaelPettorosso/homebridge-russound.git"
+    "url": "git+https://github.com/michaelpettorosso/russound-rio.git"
   },
   "dependencies": {
     "async": "^3.2.0",
+    "events": "^3.1.0",
     "nconf": "^0.10.0",
     "net": "^1.0.2"
   },
   "devDependencies": {
-    "eslint": "^6.3.0",
-    "eslint-plugin-json": "^1.4.0",
-    "xo": "^0.24.0"
   },
-  "keywords": [
-    "homebridge-plugin",
-    "homebridge",
-    "russound",
-    "rio"
-  ],
-  "engines": {
-    "node": ">=0.12.0",
-    "homebridge": ">=0.4.46"
-  },
-  "author": "m-pettorosso <michael@pettorosso.com>",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/MichaelPettorosso/homebridge-russound/issues"
-  },
-  "homepage": "https://github.com/MichaelPettorosso/homebridge-russound#readme",
-  "xo": {
-    "space": false,
-    "rules": {
-      "camelcase": "off",
-      "kebabCase": "off",
-      "no-mixed-spaces-and-tabs": "warn",
-      "no-useless-escape": "warn",
-      "indent": "off",
-      "quotes": "warn",
-      "capitalized-comments": "off",
-      "no-var": "warn",
-      "prefer-destructuring": "off",
-      "prefer-arrow-callback": "warn",
-      "object-shorthand": [
-        "off",
-        "always",
-        {
-          "ignoreConstructors": true
-        }
-      ],
-      "quote-props": "error",
-      "no-unused-vars": "warn",
-      "curly": [
-        "error",
-        "multi-or-nest",
-        "consistent"
-      ],
-      "no-use-before-define": [
-        "error",
-        {
-          "classes": false
-        }
-      ]
-    }
-  }
+  "homepage": "https://github.com/michaelpettorosso/russound-rio#readme",
+  
+
 }

@@ -1,15 +1,13 @@
 {
   "rio": {
     "mca-series": true,
-    "ipaddress": "192.168.1.250",
-    "controllerConfig": {
       "controllers": [
         {
           "controller": 1,
+          "ipaddress": "192.168.1.250",
           "zones": 6,
           "sources": 6
         }
       ]
-    }
   }
 }

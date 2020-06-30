@@ -1,5 +1,5 @@
 /**
- *  Russound RIO Node.js 
+ *  Russound RIO.js 
  *
  *  Author: michael@pettorosso.com
  *
@@ -29,411 +29,554 @@
  *   Party Mode state (0 = OFF, 1 = ON, 2 = Master)*
  *   Do Not Disturb state (0 = OFF, 1 = ON )*
 */
+//*** Config
+//  {
+//     "mca-series": true,
+//     "controllers": [
+//         {
+//           "name": 
+//           "ip": "192.168.1.250",
+//           "controller": 1,
+//           "zones": 6,
+//           "sources": 6
+//         }
+//       ]
+//     }
+//   }
 
-var async = require("async");
-var nconf = require('nconf');
+const async = require('async');
+const EventEmitter = require('events');
+const nconf = require('nconf');
 nconf.file({ file: './config.json' });
-var logger = function (str, obj) {
-    mod = 'rio';
-    console.log("[%s] [%s] %s", new Date().toISOString(), mod, str);
-}
+const net = require('net');
 
-var net = require('net');
+class RIO extends EventEmitter {
+    #config = null;
+    #log = null;
+    #zoneCommandSocket = null;
+    #zoneWatchSocket = null;
+    #sourceState = [];
+    #zoneState = [];
+    #watchedZones = [];
+    #watchedSources = [];
+    #commandQueue = null;
+    constructor(config, log) {
+        super();
+        this.#config = config;
+        this.#log = log;
+        this.#commandQueue = async.queue((data, callback) => this.#processCommandQueue(data, callback));
+    }
 
-const regResponse = /(?:(?:S\[(?<source>\d)+\])|(?:C\[(?<controller>\d+)\].Z\[(?<zone>\d+)\]))\.(?<variable>\S+)=\"(?<value>.*)\"/;
-
-var rio = new rio();
-rio.init();
-
-
-function rio() {
-
-    var _self = this;
-    _self.device = null;
-    _self._source_state = [];
-    _self._zone_state = [];
-    _self._watched_zones = {};
-    _self._watched_sources = {};
-    // _self._zone_callbacks = [];
-    // _self._source_callbacks = [];
-
-    _self._cmd_queue = async.queue((data, callback) => {
-        const sendCommand = (data, timeout = 10000) => {
-            const write = (cmd) => {
-                if (!_self.device || !_self.device.writable) {
-                    logger('rio not connected.');
-                    return;
-                }
-
-                if (!cmd || cmd.length == 0) { return; }
-                logger(`TX > ${cmd}`);
-                _self.device.write(cmd + '\r');
-            }
-
-            return new Promise((resolve, reject) => {
-                let timer;
-
-                const responseHandler = (message) => {
-                    // resolve promise with the value we got
-                    resolve(message);
-                    clearTimeout(timer);
-                }
-                _self.device.once('data', responseHandler);
-                write(data);
-
-                // set timeout so if a response is not received within a 
-                // reasonable amount of time, the promise will reject
-                timer = setTimeout(() => {
-                    reject(new Error("timeout waiting for msg"));
-                    _self.device.removeListener('data', responseHandler);
-                }, timeout);
-
-            });
-        }
-        const read = (data) => {
-            if (data.length == 0) { return; }
-            var resp = data.toString().replace(/(\r?\n|\r)/gm, '');
-            logger(`RX < ${resp}`);
-            return { status: resp.substring(0, 1), value: resp.substring(2) };
+    #getConfig = (node) => {
+        if (this.#config) {
+            if (node)
+                return this.#config[node];
+            else
+                return this.#config;
         }
 
-        sendCommand(data).then(value => {
-            var resp = read(value);
-
-            if (resp && resp.status)
-                if (resp.status === 'E') {
-                    logger('** ERROR **' + resp.value);
-                    callback(null, resp.value);
-                }
-                else {
-                    let result = regResponse.exec(resp.value);
-                    if (result && result.groups) {
-                        var sourceId = result.groups.source;
-                        var zoneId = result.groups.zone;
-                        if (sourceId && result.groups.variable === 'name') {
-                            storeCachedSourceVariable(sourceId, result.groups.variable, result.groups.value)
-                        }
-                        else if (zoneId && result.groups.variable === 'name') {
-                            storeCachedZoneVariable(zoneId, result.groups.variable, result.groups.value);
-                        }
-                    }
-                    callback(resp.value);
-                }
-            else {
-                logger('** ERROR ** Sending Command');
-                callback(null, '** ERROR ** Sending Command');
-
-            }
-        });
-
-    });
-
-
-    this.command = (cmd, callback) => {
-        _self._cmd_queue.push(cmd, callback);
     }
 
-
-
-    const getZone = (zoneId, controller = 1) => {
-        return { zone: zoneId, controller, device: `C[${controller}].Z[${zoneId}]` }
-    }
-
-    const getZoneVariable = (id, variable) => {
-        return new Promise((resolve, reject) => {
-            // Retrieve the current value of a zone variable.If the variable is not found in the local cache then the value is requested from the controller.
-            var zone = getZone(id)
-
-            _self.command(`GET ${zone.device}.${variable.toLowerCase()}`, (result, err) => {
-                if (!err)
-                    resolve(result);
-                else
-                    reject(err);
-            });
-        });
-
-
-    }
-
-    const getControllerConfig = (controller = 1) => {
-        if (nconf.get('rio:controllerConfig')) {
-            var controllerConfig = nconf.get('rio:controllerConfig');
-            var controllers = controllerConfig.controllers;
+    #getControllerConfig = (controller = 1) => {
+        if (this.#getConfig('controllers')) {
+            var controllers = this.#getConfig('controllers');
             if (controllers && controller > 0 && controllers.length > controller - 1) {
                 return controllers[controller - 1]
             }
         }
         return null;
     }
-    this.getSourceName = async (source_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getSourceVariable(source_id, 'name');
+
+    #writeCommand = (command) => {
+        if (!this.#zoneCommandSocket || !this.#zoneCommandSocket.writable) {
+            this.#log.info('Russound RIO not connected.');
+            return;
+        }
+        if (!command || command.length == 0) return;
+        this.#log.debug(`TX > ${command}`);
+        this.#zoneCommandSocket.write(`${command}\r`);
     }
-    this.getZoneName = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'name');
-    }
-    this.getZones = () => {
+
+    #sendCommand = async (data, timeout = 10000) => {
         return new Promise((resolve, reject) => {
-            var controller = getControllerConfig();
+            let timer;
 
-            if (controller) {
-                var zones = [];
-                for (let i = 0; i < controller.zones; i++) {
-                    var zv = retrieveCachedZoneVariable(i + 1, 'name');
-                    if (!zv) {
-                        _self.getZoneName(i + 1).then(value => {
-                            if (value) {
-                                let result = regResponse.exec(value);
-                                if (result && result.groups && result.groups.value)
-                                    zones.push({ zone: result.groups.zone, name: result.groups.value });
-                            }
-                            if (i + 1 === controller.zones) {
-                                resolve(zones);
-                            }
+            this.#zoneCommandSocket.once('data', (response) => {
+                clearTimeout(timer);
+                resolve(response);
+            });
 
-                        });
-                    }
-                    else {
-                        zones.push(zv);
-                        if (i + 1 === controller.zones) {
-                            resolve(zones);
-                        }
-                    }
+            this.#writeCommand(data);
+
+            timer = setTimeout(() => {
+                reject(new Error("timeout waiting for msg"));
+                clearTimeout(timer);
+                this.#zoneCommandSocket.removeListener('data', responseHandler);
+            }, timeout);
+        });
+    }
+
+    #readCommandResponses = (data) => {
+        if (data.length === 0) return [];
+        var events = data.toString().split('\r\n');
+        var responses = [];
+        events.forEach(response => {
+            responses.push({ type: response.substring(0, 1), value: response.substring(2) })
+            this.#log.debug(`RX < ${response}`);
+        });
+        return responses;
+    }
+
+
+    #readCommandResponse = (data) => {
+        var responses = this.#readCommandResponses(data);
+        if (responses.length > 0)
+            return responses[0];
+        else
+            return null;
+    }
+
+    #processCommandQueue = (data, callback) => {
+        this.#sendCommand(data).then(commandResponse => {
+            var response = this.#readCommandResponse(commandResponse);
+            if (response) {
+                this.#log.debug(response);
+
+                if (response.type === 'E') {
+                    this.#log.error('** ERROR **' + response.value);
+                    callback(null, response.value);
                 }
+                else {
+                    callback(response.value);
+                }
+            }
+            else {
+                this.#log.error('** ERROR ** Sending Command');
+                callback(null, '** ERROR ** Sending Command');
+            }
+        }).catch((err) => {
+            this.emit('error', '** ERROR ** Sending Command' + err);
+        });
+
+    }
+
+    #command = (cmd, callback) => {
+        this.#commandQueue.push(cmd, callback);
+    }
+
+    #commandPromise = async (cmd) => {
+        return new Promise((resolve, reject) => {
+            this.#command(cmd, (response, err) => {
+                if (err)
+                    reject(err);
+                else
+                    resolve(response);
+            });
+        });
+    }
+
+    #getVariableValue = (variable, value) => {
+        return `${variable ? `.${variable.toLowerCase()}` : ''}${value ? `=\"${value}\"` : ''}`
+    }
+
+    #getZoneCommand = (zoneId, variable, value, controller = 1) => {
+        return `C[${controller}].Z[${zoneId}]${this.#getVariableValue(variable, value)}`
+    }
+
+    #getSourceCommand = (sourceId, variable, value) => {
+        return `S[${sourceId}]${this.#getVariableValue(variable, value)}`
+    }
+
+    #getZonesVariable = async (zones, variable) => {
+        var zonesVariable = []
+        for (let index = 0; index < zones; index++)
+            zonesVariable.push(`${this.#getZoneCommand(index + 1, variable)}`);
+
+        var cmd = `GET ${zonesVariable.join(', ')}`;
+        return this.#commandPromise(cmd)
+    }
+
+    #getZoneVariable = async (zoneId, variable) => {
+        var cmd = `GET ${this.#getZoneCommand(zoneId, variable)}`;
+        return this.#commandPromise(cmd)
+    }
+
+    #getZoneNames = async (zones) => {
+        return this.#getZonesVariable(zones, 'name');
+    }
+
+    #getZoneName = async (zoneId) => {
+        // Get the current value of a zone name
+        return this.#getZoneVariable(zoneId, 'name');
+    }
+    getZones = async () => {
+        return new Promise((resolve, reject) => {
+            var controller = this.#getControllerConfig();
+            if (controller) {
+                this.#getZoneNames(controller.zones).then(response => {
+                    var zones = [];
+                    var responseValues = response.split(',');
+                    responseValues.forEach(value => {
+                        var values = this.#processResponseValue(value);
+                        if (values && values.value)
+                            zones.push({ id: values.zoneId, name: values.value });
+                    })
+                    resolve(zones);
+                });
             }
             else
                 reject(null);
         });
     }
 
-    this.getSources = () => {
+    getSources = async () => {
         return new Promise((resolve, reject) => {
-            var controller = getControllerConfig();
+            var controller = this.#getControllerConfig();
 
             if (controller) {
-                var sources = [];
-                for (let i = 0; i < controller.sources; i++) {
-                    var sv = retrieveCachedSourceVariable(i + 1, 'name')
-                    if (!sv)
-                        _self.getSourceName(i + 1).then(value => {
-                            if (value) {
-                                let result = regResponse.exec(value);
-                                if (result && result.groups && result.groups.value && result.groups.value !== 'N/A')
-                                    sources.push({ source: result.groups.source, name: result.groups.value });
-                            }
-                            if (i + 1 === controller.sources) {
-                                resolve(sources);
-                            }
-
-                        });
-                    else {
-                        sources.push(sv);
-                        if (i + 1 === controller.sources) {
-                            resolve(sources);
-                        }
-                    }
-
-                };
+                this.#getSourceNames(controller.sources).then(response => {
+                    var sources = [];
+                    var responseValues = response.split(',');
+                    responseValues.forEach(value => {
+                        var values = this.#processResponseValue(value);
+                        if (values && values.value !== 'N/A')
+                            sources.push({ id: values.sourceId, name: values.value });
+                    })
+                    resolve(sources);
+                });
             }
             else
                 reject(null);
         });
     }
 
-    const getSourceVariable = async (source_id, variable) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return new Promise((resolve, reject) => {
-            _self.command(`GET S[${source_id}].${variable}`, (result, err) => {
-                if (!err)
-                    resolve(result);
-                else
-                    reject(err);
-            });
-        });
+    #getSourcesVariable = async (sources, variable) => {
+        // Get the current value of a source variables.
+        var sourcesVariable = []
+
+        for (let index = 0; index < sources; index++)
+            sourcesVariable.push(this.#getSourceCommand(index + 1, variable));
+        var cmd = `GET ${sourcesVariable.join(', ')}`
+        return this.#commandPromise(cmd);
     }
 
-    const setZoneVariable = async (zone_id, variable, value) => {
-        return new Promise((resolve, reject) => {
-            //Change the value of a zone variable.
-            var zone = getZone(zone_id);
-
-            _self.command(`SET ${zone.device}.${variable}=\"${value}\"`, (result, err) => {
-                if (!err) {
-                    resolve(result);
-                }
-                else
-                    reject(err);
-            });
-        });
+    #getSourceVariable = async (sourceId, variable) => {
+        // Get the current value of a source variable.
+        var cmd = `GET ${this.#getSourceCommand(sourceId, variable)}`;
+        return this.#commandPromise(cmd);
     }
 
-    const setSourceVariable = async (source_id, variable, value) => {
-        return new Promise((resolve, reject) => {
-            //Change the value of a source variable.
-            _self.command(`SET S[${source_id}].${variable}=\"${value}\"`, (result, err) => {
-                if (!err) {
-                    resolve(result);
-                }
-                else
-                    reject(err);
-            });
-        });
+    #getSourceNames = async (sources) => {
+        // Get the current value of a source names.
+        return this.#getSourcesVariable(sources, 'name');
     }
 
-    const storeCachedZoneVariable = (zone_id, name, value) => {
+    #getSourceName = async (sourceId) => {
+        // Get the current value of a source name.
+        return this.#getSourceVariable(sourceId, 'name');
+    }
 
+    #setZoneVariable = async (zoneId, variable, value) => {
+        var cmd = `SET ${this.#getZoneCommand(zoneId, variable, value)}`;
+        return this.#commandPromise(cmd);
+    }
+
+    #setSourceVariable = async (sourceId, variable, value) => {
+        var cmd = `SET ${this.#getSourceCommand(sourceId, variable, value)}`;
+        return this.#commandPromise(cmd);
+    }
+
+    #storeCachedZoneVariable = (zoneId, variable, value) => {
         //Stores the current known value of a zone variable into the cache. Calls any zone callbacks.
-        var zone_state = { zone: zone_id };
-        var name = name.toLowerCase();
-        zone_state[name] = value;
-        _self._zone_state.push(zone_state)
-        var zone = getZone(zone_id);
-        logger(`Zone Cache store ${zone.device}.${name} = ${value}`);
-        //for callback in self._zone_callbacks:
-        //    callback(zone_id, name, value)
+        var zoneState = { id: zoneId };
+        zoneState[variable.toLowerCase()] = value;
+        this.#zoneState.push(zoneState)
+        this.#log.debug(`Zone Cache store ${this.#getZoneCommand(zoneId, variable, value)}`);
     }
-    const storeCachedSourceVariable = (source_id, name, value) => {
-
-        //Stores the current known value of a source variable into the cache. Calls any source callbacks.
-
-        var source_state = { source: source_id };
-        var name = name.toLowerCase();
-        source_state[name] = value
-        _self._source_state.push(source_state)
-        logger(`Source Cache store S[${source_id}].${name} = ${value}`);
-
-        //for callback in self._source_callbacks:
-        //    callback(source_id, name, value)
+    #storeCachedSourceVariable = (sourceId, variable, value) => {
+        //Stores the current known value of a source variable into the cache. 
+        var sourceState = { id: sourceId };
+        sourceState[variable.toLowerCase()] = value
+        this.#sourceState.push(sourceState)
+        this.#log.debug(`Source Cache store ${this.#getSourceCommand(sourceId, variable, value)}`);
     }
-    const retrieveCachedSourceVariable = (source_id, name) => {
-        //Retrieves the cache state of the named variable for a particular source. If the variable has not been cached then the UncachedVariable exception is raised.
-
-        var ss = _self._source_state.find(s => s.source === source_id.toString() && s.hasOwnProperty(name));
+    #retrieveCachedSourceVariable = (sourceId, variable) => {
+        //Retrieves the cache state of the named variable for a particular source.
+        var ss = this.#sourceState.find(s => s.id === sourceId && s.hasOwnProperty(variable));
         if (ss)
-            logger(`Source Cache retrieve S[${source_id}].${name}=\"${ss[name]}\"`);
+            this.#log.debug(`Source Cache retrieve ${this.#getSourceCommand(sourceId, variable, ss[variable])}`);
         return ss
     }
 
-    const retrieveCachedZoneVariable = (zone_id, name) => {
-        //Retrieves the cache state of the named variable for a particular source. If the variable has not been cached then the UncachedVariable exception is raised.
-        var zs = _self._zone_state.find(z => z.zone === zone_id.toString() && z.hasOwnProperty(name));;
-        if (zs) {
-            var zone = getZone(zone_id);
-            logger(`Zone Cache retrieve ${zone.device}].${name}=\"${zs[name]}\"`);
-        }
+    #retrieveCachedZoneVariable = (zoneId, variable) => {
+        //Retrieves the cache state of the named variable for a particular source.
+        var zs = this.#zoneState.find(z => z.id === zoneId && z.hasOwnProperty(variable));;
+        if (zs)
+            this.#log.debug(`Zone Cache retrieve ${this.#getZoneCommand(zoneId, variable, zs[variable])}`);
         return zs;
     }
 
-    this.getSystemStatus = async () => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return new Promise((resolve, reject) => {
-            _self.command(`GET System.status`, (result, err) => {
-                if (!err)
-                    resolve(result);
-                else
-                    reject(err);
-            });
-        });
+    getVersion = async () => {
+        // Get the System RIO Version
+        var cmd = `VERSION`;
+        return this.#commandPromise(cmd);
     }
 
-
-    this.getZoneSource = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'currentSource');
-    }
-    this.getZoneVolume = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'volume');
-    }
-    this.getZoneBass = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'bass');
-    }
-    this.getZoneTreble = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'treble');
-    }
-    this.getZoneBalance = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'balance');
-    }
-    this.getZoneLoudness = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'loudness');
-    }
-    this.getZoneTurnOnVolume = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'turnOnVolume');
-    }
-    this.getZoneDoNotDisturb = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'doNotDisturb');
-    }
-    this.getZonePartyMode = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'partyMode');
-    }
-    this.getZoneStatus = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'status');
-    }
-    this.getZoneMute = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'mute');
-    }
-    this.getZoneSharedSource = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'sharedSource');
-    }
-    this.getZoneLastError = async (zone_id) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return getZoneVariable(zone_id, 'lastError');
+    getSystemStatus = async () => {
+        // Get the System Status
+        var cmd = `GET System.status`;
+        return this.#commandPromise(cmd);
     }
 
-    this.init = () => {
+    #sendZoneEvent = async (zoneId, eventId, data1, data2) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        var cmd = `EVENT ${this.#getZoneCommand(zoneId)}!${eventId}${data1 ? ` ${data1}` : ''}${data2 ? ` ${data2}` : ''} `;
+        return this.#commandPromise(cmd);
+    }
 
-        if (!nconf.get('rio:ipaddress')) {
-            logger('** NOTICE ** rio ipaddress not set in config file!');
-            return;
+    #sendZoneKeyPressEvent = async (zoneId, keycode) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        var cmd = `EVENT ${this.#getZoneCommand(zoneId)}!KeyRelease ${keycode}`;
+        return this.#commandPromise(cmd);
+    }
+
+    #getOnOff = (turnOn) => {
+        return ` ${turnOn ? "ON" : "OFF"}`;
+    }
+    #watchZone = (zoneId, turnOn) => {
+        this.#watchedZones.push(zoneId);
+        this.#zoneWatchSocket.write(`WATCH ${this.#getZoneCommand(zoneId)}${this.#getOnOff(turnOn)}\r`);
+    }
+
+    watchZone = (zoneId, turnOn) => {
+        this.#watchZone(zoneId, turnOn);
+    }
+
+    #watchSource = (sourceId, turnOn) => {
+        this.#watchedSources.push(sourceId);
+        this.#zoneWatchSocket.write(`WATCH ${this.#getSourceCommand(sourceId)}${this.#getOnOff(turnOn)}\r`);
+    }
+
+    watchSource = (sourceId, turnOn) => {
+        this.#watchSource(sourceId, turnOn);
+    }
+    #watchSystem = (turnOn) => {
+        this.#zoneWatchSocket.write(`WATCH System${this.#getOnOff(turnOn)}\r`);
+    }
+
+    watchSystem = (turnOn) => {
+        this.#watchSystem(turnOn);
+    }
+
+    volumeZone = async (zoneId, level) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneEvent(zoneId, 'KeyPress', 'Volume', level);
+    }
+    volumeZoneUpDown = async (zoneId, up) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneEvent(zoneId, 'KeyPress', up ? 'VolumeUp' : 'VolumeDown');
+    }
+
+    powerZone = async (zoneId, turnOn) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneEvent(zoneId, turnOn ? 'ZoneOn' : 'ZoneOff');
+    }
+
+    selectZoneSource = async (zoneId, sourceId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneEvent(zoneId, 'SelectSource', sourceId);
+    }
+
+    muteToggleZone = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneKeyPressEvent(zoneId, 'Mute');
+    }
+
+    keypressZone = async (zoneId, keycode) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#sendZoneKeyPressEvent(zoneId, keycode);
+    }
+
+    getZoneSource = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'currentSource');
+    }
+    getZoneVolume = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'volume');
+    }
+    getZoneBass = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'bass');
+    }
+    getZoneTreble = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'treble');
+    }
+    getZoneBalance = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'balance');
+    }
+    getZoneLoudness = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'loudness');
+    }
+    getZoneTurnOnVolume = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'turnOnVolume');
+    }
+    getZoneDoNotDisturb = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'doNotDisturb');
+    }
+    getZonePartyMode = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'partyMode');
+    }
+    getZoneStatus = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'status');
+    }
+    getZoneMute = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'mute');
+    }
+    getZoneSharedSource = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'sharedSource');
+    }
+    getZoneLastError = async (zoneId) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        return this.#getZoneVariable(zoneId, 'lastError');
+    }
+    closeQueue = () => {
+        this.#commandQueue.kill()
+    }
+
+    #processResponseValue = (value) => {
+        if (!value) return null;
+        const regResponse = /(?:(?:S\[(?<sourceId>\d)+\])|(?:C\[(?<controllerId>\d+)\].Z\[(?<zoneId>\d+)\]))\.(?<variable>\S+)=\"(?<value>.*)\"/;
+
+        let result = regResponse.exec(value);
+        if (result && result.groups) {
+            var values = result.groups;
+            if (values.sourceId && values.variable === 'name') {
+                this.#storeCachedSourceVariable(values.sourceId, values.variable, values.value)
+            }
+            else if (values.zoneId && values.variable === 'name') {
+                this.#storeCachedZoneVariable(values.zoneId, values.variable, values.value);
+            }
+
+            return result.groups;
         }
+        return null
+    }
 
-        if (_self.device && _self.device.writable) { return };
+    #controllerEvents = (host, port) => {
 
 
-        var HOST = nconf.get('rio:ipaddress');
-        var PORT = process.env.PORT || 9621;
+        if (!(this.#zoneWatchSocket && this.#zoneWatchSocket.writable)) {
+            this.#zoneWatchSocket = new net.Socket();
 
-        _self.device = new net.Socket();
-        _self.device.connect(PORT, HOST, () => {
-            logger('CONNECTED TO: ' + HOST + ':' + PORT);
-            // Write a message to the socket as soon as the client is connected, the server will receive it as message from the client
+            // If the connection ends, usually due to a reboot or power loss.
+            this.#zoneWatchSocket.on('end', () => {
+                this.#log("Connection to Controller has been lost");
+            });
 
-            var Promises = [];
-            Promises.push(_self.getSystemStatus())
-            Promises.push(_self.getSources());
-            Promises.push(_self.getZones());
-            Promises.push(_self.getZoneStatus(1));
-            Promises.push(_self.getZoneSource(1));
-            Promises.push(_self.getZoneVolume(1));
-            Promises.push(_self.getZoneMute(1))
-            Promise.all(Promises).then((values) => {
-                console.log(values);
-                console.log(_self._zone_state, _self._source_state)
-                Promises = []
-                Promises.push(_self.getSources());
-                Promises.push(_self.getZones());
-                Promise.all(Promises).then((values) => {
-                    console.log(values);
-                    console.log(_self._zone_state, _self._source_state)
+            // Add a 'close' event handler for the client socket
+            this.#zoneWatchSocket.on('close', () => {
+            });
+            this.#zoneWatchSocket.on('data', (data) => {
+                var responses = this.#readCommandResponses(data);
+
+                responses.forEach(response => {
+                    if (!response) {
+                        // Skip if we are a blank line.
+                    }
+                    else if (response.type === 'E') {
+                        // An error generated.
+                        this.emit('error', event);
+                    }
+                    else if (response.value === '') {
+                        // Skip if we have a blank value.
+                    }
+                    else if (response.type === 'S') {
+                        this.#log.info(event);
+                    }
+                    else {
+                        let values = this.#processResponseValue(response.value);
+                        if (values) {
+
+                            if (values.zoneId)
+                                if (values.variable === 'status')
+                                    this.emit(`power - ${values.zoneId} `, values.zoneId, values.value);
+                                else if (values.variable === 'mute')
+                                    this.emit(`muting - ${values.zoneId} `, values.zoneId, values.value);
+                                else if (values.variable === 'currentSource')
+                                    this.emit(`input - ${values.zoneId} `, values.zoneId, values.value);
+                                else if (values.variable === 'volume')
+                                    this.emit(`volume - ${values.zoneId} `, values.zoneId, values.value);
+                                else {
+                                    //console.log('Data Groups', result.groups, response)
+                                }
+                        }
+                        else
+                            this.#log.debug('No Match', response)
+                    }
                 });
             });
-        });
+            try {
+                this.#zoneWatchSocket.connect(port, host, () => {
+                })
 
-        // Add a 'close' event handler for the client socket
-        _self.device.on('close', function () {
-            _self.queue.kill();
-        });
+            } catch (error) {
 
+            }
+        }
     }
+
+    connect = () => {
+        return new Promise((resolve, reject) => {
+            try {
+                var controllerConfig = this.#getControllerConfig();
+                if (!controllerConfig.ip) {
+                    this.#log.error('** NOTICE ** rio ipaddress not set in config file!');
+                    reject();
+                    return
+                }
+
+                if (this.#zoneCommandSocket && this.#zoneCommandSocket.writable) {
+                    resolve();
+                    return;
+                };
+
+                var host = controllerConfig.ip;
+                var port = controllerConfig.port || 9621;
+                this.#zoneCommandSocket = new net.Socket();
+
+                // Add a 'close' event handler for the client socket
+                this.#zoneCommandSocket.on('close', () => {
+                    this.emit('close');
+                    this.closeQueue;
+                });
+                this.#zoneCommandSocket.connect(port, host, () => {
+
+                    this.emit('connect', { host, port });
+                    this.#log.info(`Russound RIO connected to: ${host}: ${port} `);
+                    // Write a message to the socket as soon as the client is connected, the server will receive it as message from the client
+                    resolve({ host, port });
+                    this.#controllerEvents(host, port);
+                });
+
+
+
+            } catch (error) {
+                reject(error);
+            }
+
+        });
+    }
+
+
 }
+module.exports = RIO;
