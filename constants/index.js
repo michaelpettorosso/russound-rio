@@ -232,29 +232,27 @@ const sourceCommandPrefix = (sourceId) => {
 const getCommandValue = (command, value) => {
     return `${command ? `.${command.toLowerCase()}${value ? `=\"${value}\"` : ''}` : ''}`
 }
-
-
-export const zoneCommand = (controllerId, zoneId, command, value) => {
+const zoneCommand = (controllerId, zoneId, command, value) => {
     return `${zoneCommandPrefix(controllerId, zoneId)}${getCommandValue(command, value)}`
-}
+};
 
-export const sourceCommand = (sourceId, command, value) => {
-    return `${sourceCommandPrefix(sourceId)}${getCommandValue(command, value)}`
-}
+const sourceCommand = (sourceId, command, value) => {
+    return `${sourceCommandPrefix(sourceId)}${getCommandValue(command, value)}`;
+};
 
-export const getSystemVersionCommand = () => {
-    return SYSTEM.VERSION
-}
+const getSystemVersionCommand = () => {
+    return SYSTEM.VERSION;
+};
 
-export const getSystemStatusCommand = () => {
-    return `${GET.command} ${SYSTEM.SYSTEM_STATUS}`
-}
+const getSystemStatusCommand = () => {
+    return `${GET.command} ${SYSTEM.SYSTEM_STATUS}`;
+};
 
-export const getControllerCommand = (controllerId, command) => {
-    return `${GET.command} ${controllerCommandPrefix(controllerId)}${getCommandValue(command)}`
-}
+const getControllerCommand = (controllerId, command) => {
+    return `${GET.command} ${controllerCommandPrefix(controllerId)}${getCommandValue(command)}`;
+};
 
-export const getControllerCommands = (controllerId) => {
+const getControllerCommands = (controllerId) => {
     var commands = []
     Object.keys(CONTROLLER).forEach(key => {
         commands.push(`${controllerCommandPrefix(controllerId)}${getCommandValue(CONTROLLER[key])}`);
@@ -262,17 +260,17 @@ export const getControllerCommands = (controllerId) => {
         // index: the ordinal position of the key within the object 
     });
     return `${GET.command} ${commands.join(',')}`
-}
+};
 
-export const getEventZoneCommand = (controllerId, zoneId, event, data1, data2) => {
+const getEventZoneCommand = (controllerId, zoneId, event, data1, data2) => {
     return `${EVENT.command} ${zoneCommandPrefix(controllerId, zoneId)}!${event}${data1 ? ` ${data1}` : ''}${data2 ? ` ${data2}` : ''}`
-}
+};
 
-export const getZoneCommand = (controllerId, zoneId, command) => {
+const getZoneCommand = (controllerId, zoneId, command) => {
     return `${GET.command} ${zoneCommand(controllerId, zoneId, command)}`
-}
+};
 
-export const getZoneCommands = (controllerId, zoneId) => {
+const getZoneCommands = (controllerId, zoneId) => {
     var commands = []
     Object.keys(GET.ZONE).forEach(key => {
         commands.push(zoneCommand(controllerId, zoneId, GET.ZONE[key]));
@@ -280,49 +278,74 @@ export const getZoneCommands = (controllerId, zoneId) => {
         // index: the ordinal position of the key within the object 
     });
     return `${GET.command} ${commands.join(',')}`
-}
+};
 
 
-export const getZonesCommand = (controllerId, zones, command) => {
+const getZonesCommand = (controllerId, zones, command) => {
 
     var commands = []
     for (let index = 0; index < zones; index++) {
         commands.push(zoneCommand(controllerId, index + 1, command));
     }
     return `${GET.command} ${commands.join(', ')}`
-}
+};
 
-export const setZoneCommand = (controllerId, zoneId, command, value) => {
+const setZoneCommand = (controllerId, zoneId, command, value) => {
     return `${SET.command} ${zoneCommand(controllerId, zoneId, command, value)}`
-}
+};
 
 
 
-export const getSourceCommands = (sourceId, command) => {
+const getSourceCommands = (sourceId, command) => {
     var commands = []
     Object.keys(GET.SOURCE).forEach(key => {
         commands.push(sourceCommand(sourceId, GET.SOURCE[key]));
     });
     return `${GET.command} ${commands.join(', ')}`
-}
+};
 
-export const getSourceCommand = (sourceId, command) => {
+const getSourceCommand = (sourceId, command) => {
     return `${GET.command} ${sourceCommand(sourceId, command)}`
-}
+};
 
-export const getSourcesCommand = (sources, command) => {
+const getSourcesCommand = (sources, command) => {
     var commands = []
     for (let index = 0; index < sources; index++) {
         commands.push(sourceCommand(index + 1, command));
     }
     return `${GET.command} ${commands.join(', ')}`
-}
+};
+const SYSTEM = systemCommands
+const CONTROLLER = controllerCommands
+const SET = setCommands
+const GET = getCommands
+const ADJUST = adjustCommands;
+const EVENT = eventCommands;
+const WATCH = watchCommands;
+const RESPONSE = responseCodes;
 
-export const SYSTEM = systemCommands;
-export const CONTROLLER = controllerCommands;
-export const SET = setCommands;
-export const GET = getCommands;
-export const ADJUST = adjustCommands;
-export const EVENT = eventCommands;
-export const WATCH = watchCommands;
-export const RESPONSE = responseCodes;
+
+module.exports = {
+    SYSTEM,
+    CONTROLLER,
+    SET,
+    GET,
+    ADJUST,
+    EVENT,
+    WATCH,
+    RESPONSE,
+    getSourcesCommand,
+    getSourceCommand,
+    getSourceCommands,
+    setZoneCommand,
+    getZonesCommand,
+    getZoneCommands,
+    getEventZoneCommand,
+    getControllerCommands,
+    getControllerCommand,
+    getSystemStatusCommand,
+    getSystemVersionCommand,
+    zoneCommand,
+    sourceCommand,
+
+}

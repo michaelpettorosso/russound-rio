@@ -43,25 +43,21 @@
 //       ]
 //     }
 //   }
-
-import * as constants from './constants/index.js';
-import async from 'async';
-import EventEmitter from 'events';
-import net from 'net';
+const constants = require('./constants/index.js');
+const async = require('async');
+const EventEmitter = require('events');
+const net = require('net');
 
 var logDebug = false;
-
-export const logger = {
+const EMIT = constants.WATCH.EMIT;
+const logger = {
     setDebug: (debug) => { logDebug = debug },
     log: (msg, ...optionalParams) => { console.log(msg, ...optionalParams) },
     info: (msg, ...optionalParams) => { console.log('[INFO]', msg, ...optionalParams) },
     debug: (msg, ...optionalParams) => { if (logDebug) console.log('[DEBUG]', msg, ...optionalParams) },
     error: (msg, ...optionalParams) => { console.log('[ERROR]', msg, ...optionalParams) },
 }
-
-export const EMIT = constants.WATCH.EMIT;
-
-export class RIO extends EventEmitter {
+class RIO extends EventEmitter {
 
     #getConfig = (node) => {
         if (this.#config) {
@@ -628,3 +624,8 @@ export class RIO extends EventEmitter {
 
 }
 
+module.exports = {
+    EMIT,
+    logger,
+    RIO
+};

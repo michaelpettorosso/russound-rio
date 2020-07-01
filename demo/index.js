@@ -1,6 +1,6 @@
-import { RIO, logger, EMIT } from 'russound-rio';
 import nconf from 'nconf';
-
+import pkg from 'russound-rio';
+const { RIO, logger, EMIT } = pkg;
 
 const App = () => {
     nconf.file('./config.json');
