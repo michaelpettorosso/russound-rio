@@ -91,6 +91,7 @@ export class RIO extends EventEmitter {
     #zoneState = [];
     #watchedItems = {};
     #commandQueue = null;
+    #name = 1;
     #controllerId = 1;
     #sources = 6;
     #zones = 6;
@@ -109,7 +110,7 @@ export class RIO extends EventEmitter {
                 this.#zones = controller.zones || 6;
                 this.#ip = controller.ip;
                 this.#port = controller.port || 9621;
-
+                this.#name = controller.name || 'Russound';
             }
         }
         this.#log = log;
@@ -120,6 +121,9 @@ export class RIO extends EventEmitter {
     };
     get port() {
         return this.#port;
+    };
+    get name() {
+        return this.#name;
     };
     get controllerId() {
         return this.#controllerId;
