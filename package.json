@@ -1,7 +1,7 @@
 {
   "name": "russound-rio",
-  "version": "0.0.2",
-  "description": "Javascript library to connect Russound MCA controllers",
+  "version": "0.0.3",
+  "description": "Javascript library to connect to Russound RIO MCA controllers",
   "main": "index.js",
   "dependencies": {
     "async": "^3.2.0",
