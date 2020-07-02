@@ -173,15 +173,13 @@ const EVENT_MM = {
 
 const EVENT = {
     command: 'EVENT',
-    EVENT: {
-        SELECT_SOURCE: 'SelectSource',
-        ZONE_ON: 'ZoneOn',
-        ZONE_OFF: 'ZoneOff',
-        ALL_ON: 'AllOn',
-        ALL_OFF: 'AllOff',
-        PARTY_MODE: 'PartyMode',
-        DO_NOT_DISTURB: 'DoNotDisturb'
-    }
+    SELECT_SOURCE: 'SelectSource',
+    ZONE_ON: 'ZoneOn',
+    ZONE_OFF: 'ZoneOff',
+    ALL_ON: 'AllOn',
+    ALL_OFF: 'AllOff',
+    PARTY_MODE: 'PartyMode',
+    DO_NOT_DISTURB: 'DoNotDisturb'
 };
 
 const WATCH = {

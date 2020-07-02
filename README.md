@@ -2,8 +2,7 @@
 [![npm](https://img.shields.io/npm/dt/russound-rio.svg)](https://www.npmjs.com/package/russound-rio)
 [![npm](https://img.shields.io/npm/l/russound-rio.svg)](https://www.npmjs.com/package/russound-rio)
 
-[![NPM Version](https://img.shields.io/npm/v/homebridge-russound.svg)](https://www.npmjs.com/package/russound-rio)
-![Node.js CI](https://github.com/MichaelPettorosso/russound-rio/workflows/Node.js%20CI/badge.svg?branch=master)
+[![NPM Version](https://img.shields.io/npm/v/russound-rio.svg)](https://www.npmjs.com/package/russound-rio)
 
 Javascript socket library for Russound RIO
 
@@ -16,7 +15,7 @@ folder for example of how to connect and interact with device
 
 # Changelog
 
-* Version 0.0.3 altered to support Homebridge, with https://github.com/MichaelPettorosso/homebridge-russound-rio.
+* Version 0.0.3 altered to support Homebridge, with https://github.com/michaelpettorosso/homebridge-russound-rio.
 * Version 0.0.2 added demo project.
 * Initial Release.
 

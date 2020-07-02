@@ -51,6 +51,11 @@ const net = require('net');
 
 var logDebug = false;
 const EMIT = constants.EMIT;
+const EVENT = constants.EVENT;
+const EVENT_KEY_RELEASE = constants.EVENT_KEY_RELEASE;
+const ZONE = constants.GET.ZONE;
+const SOURCE = constants.GET.SOURCE;
+
 const logger = {
     setDebug: (debug) => { logDebug = debug },
     log: (msg, ...optionalParams) => { console.log(msg, ...optionalParams) },
@@ -291,8 +296,6 @@ class RIO extends EventEmitter {
         return this.#commandPromise(cmd);
     }
 
-
-
     #sendZoneEvent = async (zoneId, eventId, data1, data2) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
         var cmd = commands.getEventZoneCommand(this.controllerId, zoneId, eventId, data1, data2);
@@ -301,7 +304,7 @@ class RIO extends EventEmitter {
 
     #sendZoneKeyReleaseEvent = async (zoneId, keycode) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        var cmd = commands.getEventZoneCommand(this.controllerId, zoneId, constants.EVENT_KEY_RELEASE.command, keycode);
+        var cmd = commands.getEventZoneCommand(this.controllerId, zoneId, EVENT_KEY_RELEASE.command, keycode);
         return this.#commandPromise(cmd);
     }
 
@@ -380,17 +383,17 @@ class RIO extends EventEmitter {
 
     powerZone = async (zoneId, turnOn) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, turnOn ? constants.EVENT.ZONE_ON : constants.EVENT.ZONE_OFF);
+        return this.#sendZoneEvent(zoneId, turnOn ? EVENT.ZONE_ON : constants.EVENT.ZONE_OFF);
     }
 
     selectZoneSource = async (zoneId, sourceId) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, constants.EVENT.SELECT_SOURCE, sourceId);
+        return this.#sendZoneEvent(zoneId, EVENT.SELECT_SOURCE, sourceId);
     }
 
     muteToggleZone = async (zoneId) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneKeyReleaseEvent(zoneId, constants.EVENT_KEY_RELEASE.MUTE);
+        return this.#sendZoneKeyReleaseEvent(zoneId, EVENT_KEY_RELEASE.MUTE);
     }
 
     keypressZone = async (zoneId, keycode) => {
@@ -576,7 +579,11 @@ class RIO extends EventEmitter {
 }
 
 module.exports = {
-    EMIT,
+    enums: {
+        EMIT,
+        ZONE,
+        SOURCE
+    },
     logger,
     RIO
 };
