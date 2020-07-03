@@ -49,99 +49,120 @@ const async = require('async');
 const EventEmitter = require('events');
 const net = require('net');
 
-var logDebug = false;
-const EMIT = constants.EMIT;
-const EVENT = constants.EVENT;
-const EVENT_KEY_RELEASE = constants.EVENT_KEY_RELEASE;
-const ZONE = constants.GET.ZONE;
-const SOURCE = constants.GET.SOURCE;
+class Logger {
+    _logDebug = false;
 
-const logger = {
-    setDebug: (debug) => { logDebug = debug },
-    log: (msg, ...optionalParams) => { console.log(msg, ...optionalParams) },
-    info: (msg, ...optionalParams) => { console.log('[INFO]', msg, ...optionalParams) },
-    debug: (msg, ...optionalParams) => { if (logDebug) console.log('[DEBUG]', msg, ...optionalParams) },
-    error: (msg, ...optionalParams) => { console.log('[ERROR]', msg, ...optionalParams) },
+    constructor(debug = false) {
+        this._logDebug = debug
+    }
+
+    log = (msg, ...optionalParams) => { console.log(msg, ...optionalParams) };
+    info = (msg, ...optionalParams) => { console.log('[INFO]', msg, ...optionalParams) };
+    debug = (msg, ...optionalParams) => { if (this._logDebug) console.log('[DEBUG]', msg, ...optionalParams) };
+    error = (msg, ...optionalParams) => { console.log('[ERROR]', msg, ...optionalParams) };
 }
-class RIO extends EventEmitter {
 
-    #getConfig = (node) => {
-        if (this.#config) {
-            if (node)
-                return this.#config[node];
-            else
-                return this.#config;
-        }
-
-    }
-
-    #getControllerConfig = (controller = 1) => {
-        if (this.#getConfig('controllers')) {
-            var controllers = this.#getConfig('controllers');
-            if (controllers && controller > 0 && controllers.length > controller - 1) {
-                return controllers[controller - 1]
-            }
-        }
-        return null;
-    }
-
-
-    #config = null;
-    #log = null;
-    #watchSocket = null;
-    #sourceState = [];
-    #zoneState = [];
-    #watchedItems = {};
-    #commandQueue = null;
-    name = 1;
+class Controller {
     controllerId = 1;
+    name = 'Russound';
     sources = 6;
     zones = 6;
     ip = null;
     port = 9621;
-
-    constructor(config, log) {
-        super();
-        this.#config = config;
-
+    constructor(config) {
         if (config) {
-            var controller = this.#getControllerConfig();
-            if (controller) {
-                this.controllerId = controller.controller || 1;
-                this.sources = controller.sources || 6;
-                this.zones = controller.zones || 6;
-                this.ip = controller.ip;
-                this.port = controller.port || 9621;
-                this.name = controller.name || 'Russound';
-            }
+            this.controllerId = config.controller || 1;
+            this.sources = config.sources || 6;
+            this.zones = config.zones || 6;
+            this.ip = config.ip;
+            this.port = config.port || 9621;
+            this.name = config.name || 'Russound';
         }
-        this.#log = log;
-        this.#commandQueue = async.queue((data, callback) => this.#processCommandQueue(data, callback));
+
+    }
+}
+
+const enums = {
+    EMIT: constants.EMIT,
+    EVENT: constants.EVENT,
+    EVENT_KEY_RELEASE: constants.EVENT_KEY_RELEASE,
+    ZONE: constants.GET.ZONE,
+    SOURCE: constants.GET.SOURCE,
+}
+
+
+
+class RIO extends EventEmitter {
+    _config = null;
+    _logger = null;
+    watchSocket = null;
+    sourceState = [];
+    zoneState = [];
+    watchedItems = {};
+    commandQueue = null;
+    _controller = null;
+
+    constructor(config, logger) {
+        super();
+        this._config = config;
+        this._logger = logger;
+        if (!logger) {
+            this.logger = new Logger(this._getConfig('debug') === true)
+        }
+        this._controller = new Controller(this._getControllerConfig());
+        this.commandQueue = async.queue((data, callback) => this.processCommandQueue(data, callback));
+    }
+    static enums = {
+        EMIT: enums.EMIT,
+        ZONE: enums.ZONE,
+        SOURCE: enums.SOURCE
     }
 
-    #writeCommand = (command) => {
+    _regCommandResponse = /(?:(?:S\[(?<sourceId>\d)+\])|(?:C\[(?<controllerId>\d+)\].Z\[(?<zoneId>\d+)\]))\.(?<variable>\S+)=\"(?<value>.*)\"/;
+    _regControllerResponse = /(?:C\[(?<controllerId>\d+)\])\.(?<variable>\S+)=\"(?<value>.*)\"/;
+
+    _getConfig = (node) => {
+        if (this._config) {
+            if (node)
+                return this._config[node];
+            else
+                return this._config;
+        }
+        else return null;
+    }
+
+    _getControllerConfig = (controller = 1) => {
+        var controllers = this._getConfig('controllers');
+
+        if (controllers && controller > 0 && controllers.length > controller - 1) {
+            return controllers[controller - 1]
+        }
+        return null;
+    }
+
+    writeCommand = (command) => {
         if (!command || command.length == 0) return false;
-        if (!this.#watchSocket || !this.#watchSocket.writable) return null;
-        this.#log.debug(`TX > ${command}`);
-        this.#watchSocket.write(`${command}\r`);
+        if (!this.watchSocket || !this.watchSocket.writable) return null;
+        this.logDebug(`TX > ${command}`);
+        this.watchSocket.write(`${command}\r`);
         return true;
     }
 
-    incompleteData = null;
+    _incompleteData = null;
 
-    #readCommandResponses = (data) => {
-        if (data.length === 0 && !this.incompleteData) return [];
+    readCommandResponses = (data) => {
+        if (data.length === 0 && !this._incompleteData) return [];
 
         var events = data.toString().split('\r\n');
 
-        if (this.incompleteData) {
-            this.#log.debug(`Incomplete data processed '${this.incompleteData}' + '${events[0]}'`);
+        if (this._incompleteData) {
+            this.logDebug(`Incomplete data processed '${this._incompleteData}' + '${events[0]}'`);
             events[0] = this.incompleteData + events[0];
-            this.incompleteData = null;
+            this._incompleteData = null;
         }
         if (!data.toString().endsWith('\r\n')) {
-            this.incompleteData = events.pop();
-            this.#log.debug(`Incomplete data detected '${this.incompleteData}'`);
+            this._incompleteData = events.pop();
+            this.logDebug(`Incomplete data detected '${this._incompleteData}'`);
         }
 
         var responses = [];
@@ -150,6 +171,7 @@ class RIO extends EventEmitter {
                 responses.push({ type: constants.RESPONSE.SUCCESS, value: null })
             else
                 var type = response.substring(0, 1);
+
             var commands = (response.substring(2).split(','))
             commands.forEach(value => {
                 if (value !== '')
@@ -160,26 +182,26 @@ class RIO extends EventEmitter {
         return responses;
     }
 
-    #processCommandQueue = (data, callback) => {
-        var cmd = this.#writeCommand(data);
+    processCommandQueue = (data, callback) => {
+        var cmd = this.writeCommand(data);
         if (cmd === true)
             callback(true);
         else {
             var errMsg = 'Russound RIO not connected.';
             if (cmd === false)
                 errMsg = 'No command specified';
-            this.#log.debug(errMsg);
+            this.logDebug(errMsg);
             callback(null, errMsg);
         }
     }
 
-    #command = (cmd, callback) => {
-        this.#commandQueue.push(cmd, callback);
+    _command = (cmd, callback) => {
+        this.commandQueue.push(cmd, callback);
     }
 
-    #commandPromise = async (cmd) => {
+    commandPromise = async (cmd) => {
         return new Promise((resolve, reject) => {
-            this.#command(cmd, (response, err) => {
+            this._command(cmd, (response, err) => {
                 if (err)
                     reject(err);
                 else
@@ -188,132 +210,63 @@ class RIO extends EventEmitter {
         });
     }
 
-    #getZoneVariable = async (zoneId, variable) => {
+    _getZoneCommand = async (zoneId, command) => {
 
-        var cmd = commands.getZoneCommand(this.controllerId, zoneId, variable);
-        return this.#commandPromise(cmd)
+        var cmd = commands.getZoneCommand(this._controller.controllerId, zoneId, command);
+        return this.commandPromise(cmd)
     }
 
-    #getZoneNames = async (zones) => {
-        var cmd = commands.getZonesCommand(this.controllerId, zones, constants.GET.ZONE.NAME);
-        return this.#commandPromise(cmd)
+    _setZoneCommand = async (zoneId, command, value) => {
+        var cmd = commands.setZoneCommand(this._controller.controllerId, zoneId, command, value);
+        return this.commandPromise(cmd);
     }
 
-    #getZoneName = async (zoneId) => {
-        // Get the current value of a zone name
-        var cmd = commands.getZoneCommand(this.controllerId, zoneId, constants.GET.ZONE.NAME);
-        return this.#commandPromise(cmd)
-    }
-
-    getCachedZones = (callback) => {
-        if (this.#zoneState.length === this.zones)
-            callback(this.#zoneState);
-    }
-
-    getCachedSources = (callback) => {
-        if (this.#sourceState.length === this.sources)
-            callback(this.#sourceState);
-    }
-
-    getZones = async () => {
-        return this.#getZoneNames(this.zones);
-    }
-
-    getSources = async () => {
-        return this.#getSourceNames(this.sources);
-    }
-
-    #getSourcesVariable = async (sources, variable) => {
-        // Get the current value of a source variables.
-        var cmd = commands.getSourcesCommand(sources, variable);
-        return this.#commandPromise(cmd);
-    }
-
-    #getSourceVariable = async (sourceId, variable) => {
-        // Get the current value of a source variable.
-        var cmd = commands.getSourceCommand(sourceId, variable);
-        return this.#commandPromise(cmd);
-    }
-
-    #getSourceNames = async (sources) => {
-        // Get the current value of a source names.
-        return this.#getSourcesVariable(sources, constants.GET.SOURCE.NAME);
-    }
-
-    #getSourceName = async (sourceId) => {
-        // Get the current value of a source name.
-        return this.#getSourceVariable(sourceId, constants.GET.SOURCE.NAME);
-    }
-
-    #setZoneVariable = async (zoneId, variable, value) => {
-        var cmd = commands.setZoneCommand(this.controllerId, zoneId, variable, value);
-        return this.#commandPromise(cmd);
-    }
-
-    #storeCachedZoneVariable = (zoneId, variable, value) => {
+    storeCachedZoneVariable = (zoneId, variable, value) => {
         //Stores the current known value of a zone variable into the cache. Calls any zone callbacks.
-        var zoneState = this.#retrieveCachedZoneVariable(zoneId, variable)
+        var zoneState = this.retrieveCachedZoneVariable(zoneId, variable)
         if (!zoneState) {
             zoneState = { id: zoneId };
-            this.#zoneState.push(zoneState)
+            this.zoneState.push(zoneState)
         }
         zoneState[variable.toLowerCase()] = value;
     }
-    #storeCachedSourceVariable = (sourceId, variable, value) => {
+    storeCachedSourceVariable = (sourceId, variable, value) => {
         //Stores the current known value of a source variable into the cache. 
-        var sourceState = this.#retrieveCachedSourceVariable(sourceId, variable)
+        var sourceState = this.retrieveCachedSourceVariable(sourceId, variable)
         if (!sourceState) {
             sourceState = { id: sourceId };
-            this.#sourceState.push(sourceState)
+            this.sourceState.push(sourceState)
         }
         sourceState[variable.toLowerCase()] = value
     }
-    #retrieveCachedSourceVariable = (sourceId, variable) => {
+    retrieveCachedSourceVariable = (sourceId, variable) => {
         //Retrieves the cache state of the named variable for a particular source.
-        return this.#sourceState.find(s => s.id === sourceId && s.hasOwnProperty(variable.toLowerCase()));
+        return this.sourceState.find(s => s.id === sourceId && s.hasOwnProperty(variable.toLowerCase()));
     }
 
-    #retrieveCachedZoneVariable = (zoneId, variable) => {
+    retrieveCachedZoneVariable = (zoneId, variable) => {
         //Retrieves the cache state of the named variable for a particular source.
-        return this.#zoneState.find(z => z.id === zoneId && z.hasOwnProperty(variable.toLowerCase()));;
+        return this.zoneState.find(z => z.id === zoneId && z.hasOwnProperty(variable.toLowerCase()));;
     }
 
-    getVersion = async () => {
-        // Get the System RIO Version
-        var cmd = commands.getSystemVersionCommand();
-        return this.#commandPromise(cmd);
-    }
-
-    getSystemStatus = async () => {
-        // Get the System Status
-        var cmd = commands.getSystemStatusCommand();
-        return this.#commandPromise(cmd);
-    }
-
-    getControllerCommands = async () => {
-        // Get the System Status
-        var cmd = commands.getControllerCommands();
-        return this.#commandPromise(cmd);
-    }
-
-    #sendZoneEvent = async (zoneId, eventId, data1, data2) => {
+    _sendZoneEvent = async (zoneId, eventId, data1, data2) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        var cmd = commands.getEventZoneCommand(this.controllerId, zoneId, eventId, data1, data2);
-        return this.#commandPromise(cmd);
+        var cmd = commands.eventZoneCommand(this._controller.controllerId, zoneId, eventId, data1, data2);
+        return this.commandPromise(cmd);
     }
 
-    #sendZoneKeyReleaseEvent = async (zoneId, keycode) => {
+    _sendZoneKeyReleaseEvent = async (zoneId, keycode) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        var cmd = commands.getEventZoneCommand(this.controllerId, zoneId, EVENT_KEY_RELEASE.command, keycode);
-        return this.#commandPromise(cmd);
+        var cmd = commands.eventZoneCommand(this._controller.controllerId, zoneId, EVENT_KEY_RELEASE.command, keycode);
+        return this.commandPromise(cmd);
     }
 
-    #watch = async (watchItem, watchCmd, turnOn) => {
+    _watch = async (watchItem, watchCmd, turnOn) => {
         return new Promise((resolve, reject) => {
-            var watchedItem = this.#watchedItems[watchItem]
+            var watchedItem = this.watchedItems[watchItem]
             if (turnOn && !watchedItem || !turnOn && watchedItem) {
-                this.#commandPromise(watchCmd).then(response => {
-                    this.#watchedItems[watchItem] = turnOn
+                this.commandPromise(watchCmd).then(response => {
+                    this.watchedItems[watchItem] = turnOn
                     resolve(constants.RESPONSE.SYSTEM);
                 })
                     .catch(err => {
@@ -324,266 +277,365 @@ class RIO extends EventEmitter {
                 resolve(constants.RESPONSE.SYSTEM);
         });
     }
-    watchSystem = async (turnOn = true) => {
-        var watchCmd = commands.getWatchSystemCommand(turnOn);
-        var watchItem = constants.WATCH.SYSTEM;
-        return this.#watch(watchItem, watchCmd, turnOn);
-    }
 
-    watchZone = async (zoneId, turnOn = true) => {
-        var watchCmd = commands.getWatchZoneCommand(this.controllerId, zoneId, turnOn);
-        var watchItem = `zone${zoneId}`;
-        return this.#watch(watchItem, watchCmd, turnOn);
-    }
-    watchSource = async (sourceId, turnOn = true) => {
-        var watchCmd = commands.getWatchSourceCommand(sourceId, turnOn);
-        var watchItem = `source${sourceId}`;
-        return this.#watch(watchItem, watchCmd, turnOn);
-    }
+    watch = {
+        system: async (turnOn = true) => {
+            var watchCmd = commands.watchSystemCommand(turnOn);
+            var watchItem = constants.WATCH.SYSTEM;
+            return this._watch(watchItem, watchCmd, turnOn);
+        },
 
-    watchZones = async (turnOn = true) => {
-        return new Promise((resolve, reject) => {
-            for (let index = 0; index < this.zones; index++) {
-                this.watchZone(index + 1, turnOn).then(() => {
-                    if (index + 1 === this.zones) {
-                        resolve(constants.RESPONSE.SYSTEM)
-                    }
-                }).catch(err => {
-                    reject(`${constants.RESPONSE.ERROR} ${err}`)
-                })
-            }
-        });
+        zone: async (zoneId, turnOn = true) => {
+            var watchCmd = commands.watchZoneCommand(this._controller.controllerId, zoneId, turnOn);
+            var watchItem = `zone${zoneId}`;
+            return this._watch(watchItem, watchCmd, turnOn);
+        },
+        source: async (sourceId, turnOn = true) => {
+            var watchCmd = commands.watchSourceCommand(sourceId, turnOn);
+            var watchItem = `source${sourceId}`;
+            return this._watch(watchItem, watchCmd, turnOn);
+        },
 
+        allZones: async (turnOn = true) => {
+            return new Promise((resolve, reject) => {
+                for (let index = 0; index < this._controller.zones; index++) {
+                    this.watch.zone(index + 1, turnOn).then(() => {
+                        if (index + 1 === this._controller.zones) {
+                            resolve(constants.RESPONSE.SYSTEM)
+                        }
+                    }).catch(err => {
+                        reject(`${constants.RESPONSE.ERROR} ${err}`)
+                    })
+                }
+            });
+
+        },
+
+        allSources: async (turnOn = true) => {
+            return new Promise((resolve, reject) => {
+                for (let index = 0; index < this._controller.sources; index++) {
+                    this.watch.source(index + 1, turnOn).then(() => {
+                        if (index + 1 === this._controller.sources)
+                            resolve(constants.RESPONSE.SYSTEM);
+                        return
+                    }).catch(err => {
+                        reject(`${constants.RESPONSE.ERROR} ${err}`);
+                        return;
+                    })
+                }
+            });
+        }
     }
+    set = {
+        zoneVolume: async (zoneId, level) => {
+            return this._sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, constants.EVENT_KEY_PRESS.VOLUME, level);
+        },
+        zoneVolumeUpDown: async (zoneId, up) => {
+            return this._sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, up ? constants.EVENT_KEY_PRESS.VOLUME_UP : constants.EVENT_KEY_PRESS.VOLUME_DOWN);
+        },
+
+        zonePower: async (zoneId, turnOn) => {
+            return this._sendZoneEvent(zoneId, turnOn ? EVENT.ZONE_ON : constants.EVENT.ZONE_OFF);
+        },
+
+        zoneSource: async (zoneId, sourceId) => {
+            return this._sendZoneEvent(zoneId, EVENT.SELECT_SOURCE, sourceId);
+        },
+
+        zoneMuteToggle: async (zoneId) => {
+            return this._sendZoneKeyReleaseEvent(zoneId, EVENT_KEY_RELEASE.MUTE);
+        },
+
+        zoneKeypress: async (zoneId, keycode) => {
+            return this._sendZoneKeyReleaseEvent(zoneId, keycode);
+        }
+    }
+    get = {
+        systemVersion: async () => {
+            // Get the System RIO Version
+            var cmd = commands.systemVersionCommand();
+            return this.commandPromise(cmd);
+        },
+
+        systemStatus: async () => {
+            // Get the System Status
+            var cmd = commands.getSystemStatusCommand();
+            return this.commandPromise(cmd);
+        },
+
+        allControllerCommands: async () => {
+            // Get the System Status
+            var cmd = commands.getAllControllerCommands();
+            return this.commandPromise(cmd);
+        },
+
+        allZoneCommands: async (zoneId) => {
+            var cmd = commands.getAllZoneCommands(this._controller.controllerId, zoneId);
+            return this.commandPromise(cmd);
+        },
+
+        allSourceCommands: async (sourceId) => {
+            var cmd = commands.getAllSourceCommands(sourceId);
+            return this.commandPromise(cmd);
+        },
+        zoneNames: async (zones = 6) => {
+            var cmd = commands.getZonesCommand(this._controller.controllerId, enums.ZONE.NAME, zones);
+            return this.commandPromise(cmd)
+        },
+
+        zoneName: async (zoneId) => {
+            // Get the current value of a zone name
+            var cmd = commands.getZoneCommand(this._controller.controllerId, zoneId, enums.ZONE.NAME);
+            return this.commandPromise(cmd)
+        },
 
 
-    watchSources = async (turnOn = true) => {
-        return new Promise((resolve, reject) => {
-            for (let index = 0; index < this.sources; index++) {
-                this.watchSource(index + 1, turnOn).then(() => {
-                    if (index + 1 === this.sources)
-                        resolve(constants.RESPONSE.SYSTEM);
-                    return
-                }).catch(err => {
-                    reject(`${constants.RESPONSE.ERROR} ${err}`);
-                    return;
-                })
-            }
-        });
-    }
 
-    volumeZone = async (zoneId, level) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, constants.EVENT_KEY_PRESS.VOLUME, level);
-    }
-    volumeZoneUpDown = async (zoneId, up) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, up ? constants.EVENT_KEY_PRESS.VOLUME_UP : constants.EVENT_KEY_PRESS.VOLUME_DOWN);
-    }
+        zoneSource: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.CURRENT_SOURCE);
+        },
+        zoneVolume: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.VOLUME);
+        },
+        zoneBass: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.BASS);
+        },
+        zoneTreble: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.TREBLE);
+        },
+        zoneBalance: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.BALANCE);
+        },
+        zoneLoudness: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.LOUDNESS);
+        },
+        zoneTurnOnVolume: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.TURN_ON_VOLUME);
+        },
+        zoneDoNotDisturb: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.DO_NO_DISTURB);
+        },
+        zonePartyMode: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.PARTY_MODE);
+        },
+        zoneStatus: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.STATUS);
+        },
+        zoneMute: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.MUTE);
+        },
+        zoneSharedSource: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.SHARED_SOURCE);
+        },
+        zoneLastError: async (zoneId) => {
+            // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+            return this._getZoneCommand(zoneId, enums.ZONE.LAST_ERROR);
+        },
 
-    powerZone = async (zoneId, turnOn) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, turnOn ? EVENT.ZONE_ON : constants.EVENT.ZONE_OFF);
-    }
 
-    selectZoneSource = async (zoneId, sourceId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneEvent(zoneId, EVENT.SELECT_SOURCE, sourceId);
-    }
+        sourcesCommand: async (command, sources = 6) => {
+            // Get the current value of a source variables.
+            var cmd = commands.getSourcesCommand(command, sources);
+            return this.commandPromise(cmd);
+        },
 
-    muteToggleZone = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneKeyReleaseEvent(zoneId, EVENT_KEY_RELEASE.MUTE);
-    }
+        sourceCommand: async (sourceId, command) => {
+            // Get the current value of a source variable.
+            var cmd = commands.getSourceCommand(sourceId, command);
+            return this.commandPromise(cmd);
+        },
 
-    keypressZone = async (zoneId, keycode) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#sendZoneKeyReleaseEvent(zoneId, keycode);
-    }
+        sourceNames: async (sources = 6) => {
+            // Get the current value of a source names.
+            return this.get.sourcesCommand(constants.GET.SOURCE.NAME, sources);
+        },
 
-    getZoneCommands = async (zoneId) => {
-        var cmd = commands.getZoneCommands(this.controllerId, zoneId);
-        return this.#commandPromise(cmd);
-    }
+        sourceName: async (sourceId) => {
+            // Get the current value of a source name.
+            return this.get.sourceCommand(sourceId, constants.GET.SOURCE.NAME);
+        },
 
-    getSourceCommands = async (sourceId) => {
-        var cmd = commands.getSourceCommands(sourceId);
-        return this.#commandPromise(cmd);
-    }
+        cachedZones: (callback) => {
+            if (this.zoneState.length === this._controller.zones)
+                callback(this.zoneState);
+        },
 
-    getZoneSource = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.CURRENT_SOURCE);
-    }
-    getZoneVolume = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.VOLUME);
-    }
-    getZoneBass = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.BASS);
-    }
-    getZoneTreble = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.TREBLE);
-    }
-    getZoneBalance = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.BALANCE);
-    }
-    getZoneLoudness = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.LOUDNESS);
-    }
-    getZoneTurnOnVolume = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.TURN_ON_VOLUME);
-    }
-    getZoneDoNotDisturb = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.DO_NO_DISTURB);
-    }
-    getZonePartyMode = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.PARTY_MODE);
-    }
-    getZoneStatus = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.STATUS);
-    }
-    getZoneMute = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.MUTE);
-    }
-    getZoneSharedSource = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.SHARED_SOURCE);
-    }
-    getZoneLastError = async (zoneId) => {
-        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        return this.#getZoneVariable(zoneId, constants.GET.ZONE.LAST_ERROR);
+        cachedSources: (callback) => {
+            if (this.sourceState.length === this._controller.sources)
+                callback(this.sourceState);
+        },
+
     }
     closeQueue = () => {
-        this.#commandQueue.kill()
+        this.commandQueue.kill()
     }
 
-    #processResponseValue = (value) => {
+    _processResponseValue = (value) => {
         if (!value) return null;
-        const regResponse = /(?:(?:S\[(?<sourceId>\d)+\])|(?:C\[(?<controllerId>\d+)\].Z\[(?<zoneId>\d+)\]))\.(?<variable>\S+)=\"(?<value>.*)\"/;
 
-        let result = regResponse.exec(value);
+        let result = this._regCommandResponse.exec(value);
         if (result && result.groups) {
             var values = result.groups;
-            if (values.variable === constants.GET.ZONE.NAME)
+            if (values.variable === enums.ZONE.NAME)
                 if (values.sourceId) {
-                    this.#storeCachedSourceVariable(values.sourceId, values.variable, values.value)
+                    this.storeCachedSourceVariable(values.sourceId, values.variable, values.value)
                 }
                 else if (values.zoneId) {
-                    this.#storeCachedZoneVariable(values.zoneId, values.variable, values.value);
+                    this.storeCachedZoneVariable(values.zoneId, values.variable, values.value);
                 }
 
             return result.groups;
         }
         return null
     }
-    #eventZone = (controllerId, zoneId, variable, value) => {
-        if (variable === 'name') {
-            if (this.#zoneState.length === this.zones)
-                this.emit(constants.EMIT.ZONES, controllerId, this.#zoneState);
-        }
-    }
-    #eventSource = (sourceId, variable, value) => {
-        if (variable === 'name') {
-            if (this.#sourceState.length === this.sources)
-                this.emit(constants.EMIT.SOURCES, this.controllerId, this.#sourceState);
-        }
-    }
 
     connect = () => {
         return new Promise((resolve, reject) => {
             try {
-                if (!this.ip) {
-                    this.#log.error('** ERROR ** RIO Controller IP Address not set in config file!');
+                if (!this._controller.ip) {
+                    this.logError('** ERROR ** RIO Controller IP Address not set in config file!');
                     reject();
                     return
                 }
 
-                if (this.#watchSocket && this.#watchSocket.writable) {
+                if (this.watchSocket && this.watchSocket.writable) {
                     resolve();
                     return;
                 };
 
-                this.on(EMIT.ZONE, this.#eventZone.bind(this));
-                this.on(EMIT.SOURCE, this.#eventSource.bind(this));
-
-                this.#watchSocket = new net.Socket();
+                this.watchSocket = new net.Socket();
 
                 // Add a 'close' event handler for the client socket
-                this.#watchSocket.on('close', () => {
-                    this.emit('close');
+                this.watchSocket.on('close', () => {
+                    this.event.close();
                     this.closeQueue;
                 });
 
-                this.#watchSocket.on('data', (data) => {
-                    var responses = this.#readCommandResponses(data);
+                this.watchSocket.on('data', (data) => {
+                    var responses = this.readCommandResponses(data);
 
                     responses.forEach(response => {
                         if (response.type === constants.RESPONSE.ERROR) {
                             // An error generated.
-                            this.emit('error', response.value);
+                            this.event.error(response.value);
                         }
                         else {
-                            let values = this.#processResponseValue(response.value);
+                            let values = this._processResponseValue(response.value);
                             if (values) {
                                 if (values.zoneId)
-                                    this.emit(`${EMIT.ZONE}`, values.controllerId, values.zoneId, values.variable, values.value);
+                                    this.event.zone(values.controllerId, values.zoneId, values.variable, values.value);
                                 else if (values.sourceId)
-                                    this.emit(`${EMIT.SOURCE}`, values.sourceId, values.variable, values.value)
+                                    this.event.source(values.sourceId, values.variable, values.value)
                                 else
-                                    this.#log.debug('No Zone or Source', response)
+                                    this.logDebug('No Zone or Source', response)
                             }
                             else {
-                                const regResponse = /(?:C\[(?<controllerId>\d+)\])\.(?<variable>\S+)=\"(?<value>.*)\"/;
-                                let result = regResponse.exec(response.value);
+                                let result = this._regControllerResponse.exec(response.value);
                                 if (result && result.groups)
-                                    this.emit(`${EMIT.CONTROLLER}`, result.groups.controllerId, result.groups.variable, result.groups.value)
+                                    this.event.controller(result.groups.controllerId, result.groups.variable, result.groups.value)
                                 else {
                                     var keyValue = response.value.split('=');
-                                    this.emit(`${EMIT.SYSTEM}`, keyValue[0], keyValue[1])
+                                    this.event.system(keyValue[0], keyValue[1])
                                 }
                             }
                         }
                     });
                 });
-                var host = this.ip;
-                var port = this.port;
+                var host = this._controller.ip;
+                var port = this._controller.port;
 
-                this.#watchSocket.connect(port, host, () => {
-
-                    this.emit('connect', { host, port });
-                    this.#log.info(`Russound RIO connected to: ${host}: ${port} `);
-                    // Write a message to the socket as soon as the client is connected, the server will receive it as message from the client
+                this.watchSocket.connect(port, host, () => {
+                    this.event.connect(host, port);
                     resolve({ host, port });
+                    this.logInfo(`Russound RIO connected to: ${host}: ${port}`);
                 });
-
-
-
             } catch (error) {
                 reject(error);
             }
-
         });
     }
 
+    _event(command, ...args) {
+        this.logDebug(`Event ${command}`, ...args)
+        this.emit(command, ...args);
+    }
 
+    event = {
+        connect: (host, port) => {
+            this._event(enums.EMIT.CONNECT, { host, port });
+        },
+        close: () => {
+            this._event(enums.EMIT.CLOSE);
+        },
+
+        error: (err) => {
+            this._event(enums.EMIT.ERROR, err);
+        },
+        zone: (controllerId, zoneId, variable, value) => {
+            this._event(enums.EMIT.ZONE, controllerId, zoneId, variable, value)
+            if (variable === 'name') {
+                //Send complete list of zones 
+                if (this.zoneState.length === this._controller.zones) {
+                    this._event(enums.EMIT.ZONES, controllerId, this.zoneState);
+                }
+            }
+        },
+        source: (sourceId, variable, value) => {
+            this._event(enums.EMIT.SOURCE, sourceId, variable, value)
+            if (variable === 'name') {
+                //Send complete list of sources 
+                if (this.sourceState.length === this._controller.sources) {
+                    this._event(enums.EMIT.SOURCES, this._controller.controllerId, this.sourceState);
+                }
+            }
+        },
+        controller: (controllerId, variable, value) => {
+            this._event(enums.EMIT.CONTROLLER, controllerId, variable, value)
+        },
+        system: (variable, value) => {
+            this._event(enums.EMIT.SYSTEM, variable, value)
+        }
+    }
+
+    _logMessage(message) {
+        return (this._controller.name ? `[${this._controller.name}] ` : "") + message;;
+    }
+
+    logInfo(message, ...args) {
+        if (this._logger)
+            this._logger.info(this._logMessage(message), ...args);
+        else
+            console.log('[Info]' + this._logMessage(message), ...args)
+    }
+
+    logDebug(message, ...args) {
+        if (this._logger)
+            this._logger.debug(this._logMessage(message), ...args);
+        else
+            console.log('[Debug]' + this._logMessage(message), ...args)
+    }
+
+    logError(message, ...args) {
+        if (this._logger)
+            this._logger.error(this._logMessage(message), ...args);
+        else
+            console.log('[Error]' + this._logMessage(message), ...args)
+    }
 }
 
 module.exports = {
-    enums: {
-        EMIT,
-        ZONE,
-        SOURCE
-    },
-    logger,
+    Logger,
     RIO
 };

@@ -14,7 +14,7 @@ This library was primarily developed to be used within a Homebridge environment 
 folder for example of how to connect and interact with device   
 
 # Changelog
-
+* Version 0.0.6 refactored and cleaned up some code.
 * Version 0.0.3 altered to support Homebridge, with https://github.com/michaelpettorosso/homebridge-russound-rio.
 * Version 0.0.2 added demo project.
 * Initial Release.

@@ -197,6 +197,12 @@ const EMIT = {
     SOURCE: `SOURCE`,
     ZONES: `ZONES`,
     SOURCES: `SOURCES`,
+
+    DEBUG: 'debug',
+    ERROR: 'error',
+    CONNECT: 'connect',
+    CLOSE: 'close'
+
 }
 
 const RESPONSE = {
