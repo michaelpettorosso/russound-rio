@@ -85,7 +85,9 @@ class Controller {
 const enums = {
     EMIT: constants.EMIT,
     EVENT: constants.EVENT,
+    EVENT_KEY_PRESS: constants.EVENT_KEY_PRESS,
     EVENT_KEY_RELEASE: constants.EVENT_KEY_RELEASE,
+    EVENT_KEY_HOLD: constants.EVENT_KEY_HOLD,
     ZONE: constants.GET.ZONE,
     SOURCE: constants.GET.SOURCE,
 }
@@ -257,7 +259,13 @@ class RIO extends EventEmitter {
 
     _sendZoneKeyReleaseEvent = async (zoneId, keycode) => {
         // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
-        var cmd = commands.eventZoneCommand(this._controller.controllerId, zoneId, EVENT_KEY_RELEASE.command, keycode);
+        var cmd = commands.eventZoneCommand(this._controller.controllerId, zoneId, enums.EVENT_KEY_RELEASE.command, keycode);
+        return this.commandPromise(cmd);
+    }
+
+    _sendZoneKeyHoldEvent = async (zoneId, keycode) => {
+        // Get the current value of a source variable. If the variable is not in the cache it will be retrieved from the controller.
+        var cmd = commands.eventZoneCommand(this._controller.controllerId, zoneId, enums.EVENT_KEY_HOLD.command, keycode, 150);
         return this.commandPromise(cmd);
     }
 
@@ -328,22 +336,22 @@ class RIO extends EventEmitter {
     }
     set = {
         zoneVolume: async (zoneId, level) => {
-            return this._sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, constants.EVENT_KEY_PRESS.VOLUME, level);
+            return this._sendZoneEvent(zoneId, enums.EVENT_KEY_PRESS.command, enums.EVENT_KEY_PRESS.VOLUME, level);
         },
         zoneVolumeUpDown: async (zoneId, up) => {
-            return this._sendZoneEvent(zoneId, constants.EVENT_KEY_PRESS.command, up ? constants.EVENT_KEY_PRESS.VOLUME_UP : constants.EVENT_KEY_PRESS.VOLUME_DOWN);
+            return this._sendZoneEvent(zoneId, enums.EVENT_KEY_PRESS.command, up ? enums.EVENT_KEY_PRESS.VOLUME_UP : enums.EVENT_KEY_PRESS.VOLUME_DOWN);
         },
 
-        zonePower: async (zoneId, turnOn) => {
-            return this._sendZoneEvent(zoneId, turnOn ? EVENT.ZONE_ON : constants.EVENT.ZONE_OFF);
+        zoneStatus: async (zoneId, turnOn) => {
+            return this._sendZoneEvent(zoneId, turnOn ? enums.EVENT.ZONE_ON : enums.EVENT.ZONE_OFF);
         },
 
         zoneSource: async (zoneId, sourceId) => {
-            return this._sendZoneEvent(zoneId, EVENT.SELECT_SOURCE, sourceId);
+            return this._sendZoneEvent(zoneId, enums.EVENT.SELECT_SOURCE, sourceId);
         },
 
-        zoneMuteToggle: async (zoneId) => {
-            return this._sendZoneKeyReleaseEvent(zoneId, EVENT_KEY_RELEASE.MUTE);
+        zoneMute: async (zoneId, turnOn = true) => {
+            return this._sendZoneKeyHoldEvent(zoneId, enums.EVENT_KEY_RELEASE.MUTE, turnOn ? "ON" : "OFF");
         },
 
         zoneKeypress: async (zoneId, keycode) => {

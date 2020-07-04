@@ -23,12 +23,20 @@ const App = () => {
         logger.debug('eventClose: ', response);
     }
 
+    const eventSystem = (variable, value) => {
+        logger.debug('SYSTEM Event', variable, value)
+    }
+
+    const eventController = (controllerId, variable, value) => {
+        logger.debug('CONTROLLER Event', controllerId, variable, value)
+    }
+
     const eventZone = (controllerId, zoneId, variable, value) => {
-        logger.debug('Zone Event', `Controller=${controllerId}`, `Zone=${zoneId}`, `${variable}=${value}`)
+        logger.debug('ZONE Event', `Controller=${controllerId}`, `Zone=${zoneId}`, `${variable}=${value}`)
     }
 
     const eventSource = (sourceId, variable, value) => {
-        logger.debug('Source Event', `Source=${sourceId}`, `${variable}=${value}`)
+        logger.debug('SOURCE Event', `Source=${sourceId}`, `${variable}=${value}`)
 
     }
 
@@ -37,25 +45,19 @@ const App = () => {
 
     const eventZones = (controllerId, zones) => {
         if (!savedZones) {
-            logger.debug('Zones Event', controllerId, zones)
+            logger.debug('ZONES Event', controllerId, zones)
             savedZones = zones;
         }
     }
 
     const eventSources = (controllerId, sources) => {
         if (!savedSources) {
-            logger.debug('Sources Event', controllerId, sources)
+            logger.debug('SOURCES Event', controllerId, sources)
             savedSources = sources;
         }
 
     }
 
-    const eventSystem = (variable, value) => {
-        logger.debug('System Event', variable, value)
-    }
-    const eventController = (controllerId, variable, value) => {
-        logger.debug('Controller Event', controllerId, variable, value)
-    }
 
     rio.on(RIO.enums.EMIT.DEBUG, eventDebug.bind(this));
     rio.on(RIO.enums.EMIT.ERROR, eventError.bind(this));
