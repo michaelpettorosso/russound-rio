@@ -58,6 +58,24 @@ const App = () => {
 
     }
 
+    var configuredSource = null
+    const eventConfiguredSources = (controllerId) => {
+        if (!configuredSource) {
+            configuredSource = rio.defaultController.configuredSources
+            logger.debug('Configured Sources Event', controllerId, rio.defaultController.configuredSources)
+        }
+
+    };
+
+    var configuredZones = null
+    const eventConfiguredZones = (controllerId) => {
+        if (!configuredZones) {
+            configuredZones = rio.defaultController.configuredZones
+            logger.debug('Configured Zones Event', controllerId, configuredZones)
+        }
+
+    };
+
 
     rio.on(RIO.enums.EMIT.DEBUG, eventDebug.bind(this));
     rio.on(RIO.enums.EMIT.ERROR, eventError.bind(this));
@@ -70,6 +88,9 @@ const App = () => {
     rio.on(RIO.enums.EMIT.SOURCE, eventSource.bind(this));
     rio.on(RIO.enums.EMIT.ZONES, eventZones.bind(this));
     rio.on(RIO.enums.EMIT.SOURCES, eventSources.bind(this));
+
+    rio.defaultController.on(RIO.enums.EMIT.CONFIGURED_ZONES, eventConfiguredZones.bind(this));
+    rio.defaultController.on(RIO.enums.EMIT.CONFIGURED_SOURCES, eventConfiguredSources.bind(this));
 
     rio.connect().then(() => {
         const doAsync = async () => {

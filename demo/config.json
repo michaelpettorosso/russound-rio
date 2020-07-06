@@ -7,8 +7,61 @@
         "name": "MCA-88X",
         "controller": 1,
         "ip": "192.168.1.250",
-        "zones": 6,
-        "sources": 6
+        "sources": [
+          {
+            "name": "Integra",
+            "display_name": "Integra"
+          },
+          {
+            "name": "Streamer",
+            "display_name": "MCA-88X"
+          },
+          {
+            "name": "Retreat TV",
+            "display_name": "Retreat TV"
+          },
+          {
+            "name": "Sonos",
+            "display_name": "Sonos"
+          },
+          {
+            "name": "Airport Express",
+            "display_name": "Airport Express"
+          }
+        ],
+        "zones": [
+          {
+            "sources": ["Integra", "Streamer", "Sonos", "Airport Express"],
+            "name": "Master",
+            "display_name": "Master"
+          },
+          {
+            "sources": ["Integra", "Streamer", "Sonos", "Airport Express"],
+            "name": "Kitchen",
+            "display_name": "Kitchen Area"
+          },
+          {
+            "sources": ["Integra", "Streamer", "Sonos", "Airport Express"],
+            "enable": false,
+            "name": "Dining/Powder",
+            "display_name": "Dining/Powder"
+          },
+          {
+            "sources": ["Integra", "Streamer", "Sonos", "Airport Express"],
+            "name": "Alfresco",
+            "display_name": "Alfresco"
+          },
+          {
+            "sources": ["Integra", "Streamer", "Sonos", "Airport Express"],
+            "name": "Cabana",
+            "display_name": "Cabana"
+          },
+          {
+            "sources": ["Streamer", "Retreat TV", "Sonos", "Airport Express"],
+            "name": "Retreat",
+            "display_name": "Retreat"
+          }
+        ]
       }
     ]
   }

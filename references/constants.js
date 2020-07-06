@@ -182,6 +182,11 @@ const EVENT = {
     DO_NOT_DISTURB: 'DoNotDisturb'
 };
 
+const STATUS = {
+    ON: 'ON',
+    OFF: 'OFF'
+};
+
 const WATCH = {
     command: 'WATCH',
     ON: 'ON',
@@ -193,16 +198,21 @@ const WATCH = {
 const EMIT = {
     SYSTEM: 'SYSTEM',
     CONTROLLER: 'CONTROLLER',
-    ZONE: `ZONE`,
-    SOURCE: `SOURCE`,
-    ZONES: `ZONES`,
-    SOURCES: `SOURCES`,
-
+    ZONE: 'ZONE',
+    SOURCE: 'SOURCE',
+    ZONES: 'ZONES',
+    SOURCES: 'SOURCES',
+    CONFIGURED_ZONES: 'CONFIGURED_ZONES',
+    CONFIGURED_SOURCES: 'CONFIGURED_SOURCES',
     DEBUG: 'debug',
     ERROR: 'error',
     CONNECT: 'connect',
     CLOSE: 'close'
 
+}
+
+const INVALID = {
+    SOURCE_NAME: 'N/A'
 }
 
 const RESPONSE = {
@@ -221,6 +231,8 @@ module.exports = {
     EVENT_KEY_PRESS,
     EVENT_KEY_RELEASE,
     EVENT_KEY_HOLD,
+    STATUS,
+    INVALID,
     WATCH,
     EMIT,
     RESPONSE
