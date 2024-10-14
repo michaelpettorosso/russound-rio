@@ -172,7 +172,7 @@ The Russound App doesn't handle this, I've added the capability to manage
 
 | Fields                 | Description                                                        | Default                                                                   | Required |
 |------------------------|--------------------------------------------------------------------|---------------------------------------------------------------------------|----------|
-| name                   | Name to use for this Russound Controller.                          | MCA-88X                                                                   | No       |
+| name                   | Name to use for this Russound Controller.                          | MCA-66                                                                    | No       |
 | ip                     | IP address of your Russound Controller.                            |                                                                           | Yes      |
 
 `zones` zones parameters:
