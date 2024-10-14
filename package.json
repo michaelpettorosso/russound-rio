@@ -1,14 +1,17 @@
 {
   "name": "russound-rio",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Javascript library to connect to Russound RIO MCA controllers",
   "main": "index.js",
   "dependencies": {
-    "async": "^3.2.0",
-    "events": "^3.1.0",
+    "async": "^3.2.6",
+    "events": "^3.3.0",
     "net": "^1.0.2"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@types/async": "^3.2.24",
+    "@types/node": "^20.16.11"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -19,7 +22,7 @@
   "keywords": [
     "RIO",
     "RUSSOUND",
-    "MCA-88X"
+    "MCA-66"
   ],
   "author": "Michael Pettorosso",
   "license": "ISC",

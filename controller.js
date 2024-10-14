@@ -1,11 +1,11 @@
-const EventEmitter = require('events');
-const Constants = require('./references/constants');
+import EventEmitter from 'events';
+import { EMIT as _EMIT, INVALID as _INVALID, CONTROLLER as _CONTROLLER, SYSTEM as _SYSTEM } from './references/constants';
 
 const enums = {
-    EMIT: Constants.EMIT,
-    INVALID: Constants.INVALID,
-    CONTROLLER: Constants.CONTROLLER,
-    SYSTEM: Constants.SYSTEM
+    EMIT: _EMIT,
+    INVALID: _INVALID,
+    CONTROLLER: _CONTROLLER,
+    SYSTEM: _SYSTEM
 }
 
 class Controller extends EventEmitter {
@@ -143,4 +143,4 @@ class Controller extends EventEmitter {
 
 }
 
-module.exports = Controller;
+export default Controller;
