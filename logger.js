@@ -11,4 +11,4 @@ class Logger {
     error = (msg, ...optionalParams) => { console.log('[ERROR]', msg, ...optionalParams) };
 }
 
-module.exports = Logger;
+export default Logger;
